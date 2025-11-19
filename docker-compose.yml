@@ -2,10 +2,7 @@ version: '3.8'
 
 services:
   q2api:
-    # 构建本地镜像 (如果使用远程镜像，请注释掉 build 并取消注释下面的 image)
-    build: .
-    # image: ghcr.io/moyan78641/q2api:sha-ca091b1
-
+    image: ghcr.io/moyan78641/q2api:sha-1335f50
     container_name: q2api
     restart: unless-stopped
     ports:
