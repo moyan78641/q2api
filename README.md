@@ -185,6 +185,40 @@ curl -X DELETE http://localhost:8000/v2/accounts/{account_id}
 
 ### OpenAI 兼容 API
 
+#### 获取模型列表
+
+```bash
+curl http://localhost:8000/v1/models \
+  -H "Authorization: Bearer your-api-key"
+```
+
+返回示例：
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "claude-3.5-sonnet",
+      "object": "model",
+      "created": 1677610602,
+      "owned_by": "anthropic"
+    },
+    {
+      "id": "claude-sonnet-4",
+      "object": "model",
+      "created": 1677610602,
+      "owned_by": "anthropic"
+    },
+    {
+      "id": "claude-sonnet-4.5",
+      "object": "model",
+      "created": 1677610602,
+      "owned_by": "anthropic"
+    }
+  ]
+}
+```
+
 #### 非流式请求
 
 ```bash
@@ -239,6 +273,13 @@ print(response.choices[0].message.content)
 ### Claude Messages API
 
 本项目完整支持 Claude Messages API 格式，包括流式响应、工具调用、多模态内容等。
+
+**认证方式说明:**
+- `/v1/messages` 端点同时支持两种认证header:
+  - `x-api-key: your-api-key` (Claude官方风格)
+  - `Authorization: Bearer your-api-key` (OpenAI风格)
+- `/v1/chat/completions` 端点使用 `Authorization: Bearer your-api-key`
+- `/v1/models` 端点两种认证方式均支持
 
 #### 基础文本对话
 
@@ -596,6 +637,7 @@ CREATE TABLE accounts (
 
 ### OpenAI 兼容
 - `POST /v1/chat/completions` - Chat Completions API
+- `GET /v1/models` - 列出可用模型
 
 ### Claude 兼容
 - `POST /v1/messages` - Messages API（支持流式、工具调用、多模态）
