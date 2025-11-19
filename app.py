@@ -856,8 +856,16 @@ async def _create_account_from_tokens(
 
 # 管理控制台相关端点 - 仅在启用时注册
 if CONSOLE_ENABLED:
+    async def require_console_auth(authorization: Optional[str] = Header(default=None), x_api_key: Optional[str] = Header(default=None, alias="x-api-key")):
+        """控制台端点的认证依赖 - 仅验证API Key,不需要AWS账号"""
+        bearer = _extract_bearer(authorization) if authorization else x_api_key
+        if ALLOWED_API_KEYS:
+            if not bearer or bearer not in ALLOWED_API_KEYS:
+                raise HTTPException(status_code=401, detail="Invalid or missing API key")
+        return True
+
     @app.post("/v2/auth/start")
-    async def auth_start(body: AuthStartBody):
+    async def auth_start(body: AuthStartBody, _auth: bool = Depends(require_console_auth)):
         """
         Start device authorization and return verification URL for user login.
         Session lifetime capped at 5 minutes on claim.
@@ -894,7 +902,7 @@ if CONSOLE_ENABLED:
         }
 
     @app.get("/v2/auth/status/{auth_id}")
-    async def auth_status(auth_id: str):
+    async def auth_status(auth_id: str, _auth: bool = Depends(require_console_auth)):
         sess = AUTH_SESSIONS.get(auth_id)
         if not sess:
             raise HTTPException(status_code=404, detail="Auth session not found")
@@ -909,7 +917,7 @@ if CONSOLE_ENABLED:
         }
 
     @app.post("/v2/auth/claim/{auth_id}")
-    async def auth_claim(auth_id: str):
+    async def auth_claim(auth_id: str, _auth: bool = Depends(require_console_auth)):
         """
         Block up to 5 minutes to exchange the device code for tokens after user completed login.
         On success, creates an enabled account and returns it.
@@ -964,7 +972,7 @@ if CONSOLE_ENABLED:
     # ------------------------------------------------------------------------------
 
     @app.post("/v2/accounts")
-    async def create_account(body: AccountCreate):
+    async def create_account(body: AccountCreate, _auth: bool = Depends(require_console_auth)):
         now = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
         acc_id = str(uuid.uuid4())
         other_str = json.dumps(body.other, ensure_ascii=False) if body.other is not None else None
@@ -997,7 +1005,7 @@ if CONSOLE_ENABLED:
                 return _row_to_dict(row)
 
     @app.get("/v2/accounts")
-    async def list_accounts():
+    async def list_accounts(_auth: bool = Depends(require_console_auth)):
         async with _conn() as conn:
             conn.row_factory = aiosqlite.Row
             async with conn.execute("SELECT * FROM accounts ORDER BY created_at DESC") as cursor:
@@ -1005,11 +1013,11 @@ if CONSOLE_ENABLED:
                 return [_row_to_dict(r) for r in rows]
 
     @app.get("/v2/accounts/{account_id}")
-    async def get_account_detail(account_id: str):
+    async def get_account_detail(account_id: str, _auth: bool = Depends(require_console_auth)):
         return await get_account(account_id)
 
     @app.delete("/v2/accounts/{account_id}")
-    async def delete_account(account_id: str):
+    async def delete_account(account_id: str, _auth: bool = Depends(require_console_auth)):
         async with _conn() as conn:
             cur = await conn.execute("DELETE FROM accounts WHERE id=?", (account_id,))
             await conn.commit()
@@ -1018,7 +1026,7 @@ if CONSOLE_ENABLED:
             return {"deleted": account_id}
 
     @app.patch("/v2/accounts/{account_id}")
-    async def update_account(account_id: str, body: AccountUpdate):
+    async def update_account(account_id: str, body: AccountUpdate, _auth: bool = Depends(require_console_auth)):
         now = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
         fields = []
         values: List[Any] = []
@@ -1055,7 +1063,7 @@ if CONSOLE_ENABLED:
                 return _row_to_dict(row)
 
     @app.post("/v2/accounts/{account_id}/refresh")
-    async def manual_refresh(account_id: str):
+    async def manual_refresh(account_id: str, _auth: bool = Depends(require_console_auth)):
         return await refresh_access_token_in_db(account_id)
 
     # ------------------------------------------------------------------------------
