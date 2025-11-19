@@ -184,9 +184,82 @@
     .tab.active { color:var(--accent); border-bottom-color:var(--accent); }
     .tab-content { display:none; }
     .tab-content.active { display:block; }
+
+    /* 认证模态框样式 */
+    .auth-modal {
+      display: none;
+      position: fixed;
+      z-index: 9999;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(8px);
+      align-items: center;
+      justify-content: center;
+    }
+    .auth-modal-content {
+      background: linear-gradient(145deg, rgba(15,20,32,0.98), rgba(10,14,26,0.98));
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 40px;
+      max-width: 480px;
+      width: 90%;
+      box-shadow: 0 30px 90px rgba(0,0,0,0.6), 0 0 0 1px rgba(79,143,255,0.15);
+      animation: modalFadeIn 0.3s ease-out;
+    }
+    @keyframes modalFadeIn {
+      from { opacity: 0; transform: scale(0.95) translateY(-20px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .auth-modal h2 {
+      margin: 0 0 12px;
+      font-size: 24px;
+      background: linear-gradient(135deg, #4f8fff, #7b9fff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .auth-modal p {
+      color: var(--muted);
+      margin: 0 0 24px;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .auth-error {
+      color: var(--danger);
+      font-size: 13px;
+      margin-top: 8px;
+      min-height: 20px;
+    }
+    .auth-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .auth-actions button {
+      flex: 1;
+    }
   </style>
 </head>
 <body>
+  <!-- API Key 认证模态框 -->
+  <div id="auth-modal" class="auth-modal">
+    <div class="auth-modal-content">
+      <h2>🔐 API Key 认证</h2>
+      <p>请输入您在 .env 中配置的 OPENAI_KEYS 以访问管理控制台。</p>
+      <div class="field">
+        <label>API Key</label>
+        <input type="password" id="auth-key-input" placeholder="输入您的API Key" onkeypress="if(event.key==='Enter') verifyAndSetApiKey(this.value)" />
+        <div id="auth-error" class="auth-error"></div>
+      </div>
+      <div class="auth-actions">
+        <button onclick="verifyAndSetApiKey(document.getElementById('auth-key-input').value)">验证并登录</button>
+      </div>
+    </div>
+  </div>
+
   <div class="container">
     <h1>v2 前端控制台</h1>
 
@@ -195,6 +268,7 @@
       <button class="tab" onclick="switchTab('create')">创建账号</button>
       <button class="tab" onclick="switchTab('login')">URL登录</button>
       <button class="tab" onclick="switchTab('chat')">Chat测试</button>
+      <button class="tab right btn-danger" onclick="clearApiKey(); location.reload();" style="margin-left: auto;">注销</button>
     </div>
 
     <div id="tab-accounts" class="tab-content active">
@@ -300,6 +374,73 @@
 
 
 <script>
+// API Key 认证管理
+let API_KEY = null;
+
+function getApiKey() {
+  if (!API_KEY) {
+    API_KEY = sessionStorage.getItem('q2api_key');
+  }
+  return API_KEY;
+}
+
+function setApiKey(key) {
+  API_KEY = key;
+  sessionStorage.setItem('q2api_key', key);
+}
+
+function clearApiKey() {
+  API_KEY = null;
+  sessionStorage.removeItem('q2api_key');
+}
+
+function promptApiKey() {
+  const modal = document.getElementById('auth-modal');
+  const input = document.getElementById('auth-key-input');
+  const error = document.getElementById('auth-error');
+
+  modal.style.display = 'flex';
+  input.value = '';
+  error.textContent = '';
+  input.focus();
+
+  return new Promise((resolve) => {
+    window.authResolve = resolve;
+  });
+}
+
+async function verifyAndSetApiKey(key) {
+  if (!key || !key.trim()) {
+    document.getElementById('auth-error').textContent = '请输入API Key';
+    return false;
+  }
+
+  // 验证API Key是否有效
+  try {
+    const r = await fetch('/healthz', {
+      headers: {
+        'Authorization': 'Bearer ' + key.trim()
+      }
+    });
+
+    if (r.ok) {
+      setApiKey(key.trim());
+      document.getElementById('auth-modal').style.display = 'none';
+      if (window.authResolve) {
+        window.authResolve(true);
+        window.authResolve = null;
+      }
+      return true;
+    } else {
+      document.getElementById('auth-error').textContent = 'API Key 验证失败，请检查配置';
+      return false;
+    }
+  } catch(e) {
+    document.getElementById('auth-error').textContent = '验证失败：' + e.message;
+    return false;
+  }
+}
+
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -310,6 +451,11 @@ function switchTab(name) {
 function api(path){
   const pathClean = ('/' + (path || '').replace(/^\/+/, '')).replace(/\/{2,}/g, '/');
   return pathClean;
+}
+
+function getAuthHeaders() {
+  const key = getApiKey();
+  return key ? { 'Authorization': 'Bearer ' + key } : {};
 }
 
 function renderAccounts(list){
@@ -428,7 +574,14 @@ function renderAccounts(list){
 
 async function loadAccounts(){
   try{
-    const r = await fetch(api('/v2/accounts'));
+    const r = await fetch(api('/v2/accounts'), {
+      headers: getAuthHeaders()
+    });
+    if (r.status === 401) {
+      clearApiKey();
+      await promptApiKey();
+      return loadAccounts();
+    }
     const j = await r.json();
     renderAccounts(j);
   } catch(e){
@@ -453,7 +606,7 @@ async function createAccount(){
   try{
     const r = await fetch(api('/v2/accounts'), {
       method:'POST',
-      headers:{ 'content-type':'application/json' },
+      headers:{ ...getAuthHeaders(), 'content-type':'application/json' },
       body: JSON.stringify(body)
     });
     if (!r.ok) {
@@ -467,9 +620,12 @@ async function createAccount(){
 }
 
 async function deleteAccount(id){
-  if (!confirm('确认删除该账号？')) return;
+  if (!confirm('确认删除该账号?')) return;
   try{
-    const r = await fetch(api('/v2/accounts/' + encodeURIComponent(id)), { method:'DELETE' });
+    const r = await fetch(api('/v2/accounts/' + encodeURIComponent(id)), {
+      method:'DELETE',
+      headers: getAuthHeaders()
+    });
     if (!r.ok) { throw new Error(await r.text()); }
     await loadAccounts();
   } catch(e){
@@ -481,7 +637,7 @@ async function updateAccount(id, patch){
   try{
     const r = await fetch(api('/v2/accounts/' + encodeURIComponent(id)), {
       method:'PATCH',
-      headers:{ 'content-type':'application/json' },
+      headers:{ ...getAuthHeaders(), 'content-type':'application/json' },
       body: JSON.stringify(patch)
     });
     if (!r.ok) { throw new Error(await r.text()); }
@@ -493,7 +649,10 @@ async function updateAccount(id, patch){
 
 async function refreshAccount(id){
   try{
-    const r = await fetch(api('/v2/accounts/' + encodeURIComponent(id) + '/refresh'), { method:'POST' });
+    const r = await fetch(api('/v2/accounts/' + encodeURIComponent(id) + '/refresh'), {
+      method:'POST',
+      headers: getAuthHeaders()
+    });
     if (!r.ok) { throw new Error(await r.text()); }
     await loadAccounts();
   } catch(e){
@@ -511,7 +670,7 @@ async function refreshAccount(id){
    try {
      const r = await fetch(api('/v2/auth/start'), {
        method: 'POST',
-       headers: { 'content-type': 'application/json' },
+       headers: { ...getAuthHeaders(), 'content-type': 'application/json' },
        body: JSON.stringify(body)
      });
      if (!r.ok) throw new Error(await r.text());
@@ -534,12 +693,15 @@ async function refreshAccount(id){
 
  async function claimAuth(){
    if (!currentAuth || !currentAuth.authId) {
-     document.getElementById('auth_info').textContent = '请先点击“开始登录”。';
+     document.getElementById('auth_info').textContent = '请先点击"开始登录"。';
      return;
    }
    document.getElementById('auth_info').textContent += '\\n\\n正在等待授权并创建账号（最多5分钟）...';
    try{
-     const r = await fetch(api('/v2/auth/claim/' + encodeURIComponent(currentAuth.authId)), { method: 'POST' });
+     const r = await fetch(api('/v2/auth/claim/' + encodeURIComponent(currentAuth.authId)), {
+       method: 'POST',
+       headers: getAuthHeaders()
+     });
      const text = await r.text();
      let j;
      try { j = JSON.parse(text); } catch { j = { raw: text }; }
@@ -561,7 +723,7 @@ async function send() {
   catch(e){ out.textContent = 'messages 不是合法 JSON'; return; }
 
   const body = { model, messages, stream };
-  const headers = { 'content-type': 'application/json' };
+  const headers = { ...getAuthHeaders(), 'content-type': 'application/json' };
 
   if (!stream) {
     const r = await fetch(api('/v1/chat/completions'), {
@@ -588,7 +750,12 @@ async function send() {
   }
 }
 
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
+  // 检查是否需要API Key认证
+  const key = getApiKey();
+  if (!key) {
+    await promptApiKey();
+  }
   loadAccounts();
 });
 </script>
