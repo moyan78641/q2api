@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  q2api:
+    # 构建本地镜像 (如果使用远程镜像，请注释掉 build 并取消注释下面的 image)
+    build: .
+    # image: ghcr.io/moyan78641/q2api:sha-ca091b1
+
+    container_name: q2api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # 服务端口
+      PORT: 8000
+      # 数据存储路径 (对应下面的 volumes)
+      DATA_DIR: /app/data
+      # ========================================
+      # 安全配置
+      # ========================================
+
+      # OpenAI 风格 API Key 白名单（多个用逗号分隔）
+      # 留空则为开发模式，不校验 Authorization
+      # 生产环境请务必配置！示例: "your-secret-key-1,your-secret-key-2"
+      OPENAI_KEYS: ""
+
+      # ========================================
+      # 账号管理配置
+      # ========================================
+
+      # 出错次数阈值，超过此值自动禁用账号
+      MAX_ERROR_COUNT: 100
+
+      # ========================================
+      # 网络配置
+      # ========================================
+
+      # HTTP代理设置（留空不使用代理）
+      # 示例: "http://127.0.0.1:7890"
+      HTTP_PROXY: ""
+
+      # ========================================
+      # 功能开关
+      # ========================================
+
+      # 管理控制台开关
+      # 设置为 "false" 或 "0" 可禁用 Web 管理控制台和相关API端点
+      # 注意: 如果启用控制台且配置了 OPENAI_KEYS，访问控制台需要输入API Key
+      ENABLE_CONSOLE: "true"
+
+    volumes:
+      # 数据持久化：将宿主机的 ./data 目录映射到容器内的 /app/data
+      # 这样可以保存账号信息和数据库文件
+      - ./data:/app/data
+
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    # 资源限制 (可选，按需启用)
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '2'
+    #       memory: 1G
+    #     reservations:
+    #       cpus: '0.5'
+    #       memory: 256M
+
+# 网络配置 (可选)
+# networks:
+#   default:
+#     driver: bridge
+#     ipam:
+#       config:
+#         - subnet: 172.28.0.0/16
