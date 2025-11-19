@@ -86,7 +86,7 @@ def convert_tool(tool: ClaudeTool) -> Dict[str, Any]:
     }
 
 def merge_user_messages(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Merge consecutive user messages."""
+    """Merge consecutive user messages, keeping only the last 2 messages' images."""
     if not messages:
         return {}
     
@@ -94,6 +94,7 @@ def merge_user_messages(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
     base_context = None
     base_origin = None
     base_model = None
+    all_images = []
     
     for msg in messages:
         content = msg.get("content", "")
@@ -106,13 +107,28 @@ def merge_user_messages(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
         
         if content:
             all_contents.append(content)
-            
-    return {
+        
+        # Collect images from each message
+        msg_images = msg.get("images")
+        if msg_images:
+            all_images.append(msg_images)
+    
+    result = {
         "content": "\n\n".join(all_contents),
         "userInputMessageContext": base_context or {},
         "origin": base_origin or "CLI",
         "modelId": base_model
     }
+    
+    # Only keep images from the last 2 messages that have images
+    if all_images:
+        kept_images = []
+        for img_list in all_images[-2:]:  # Take last 2 messages' images
+            kept_images.extend(img_list)
+        if kept_images:
+            result["images"] = kept_images
+    
+    return result
 
 def process_history(messages: List[ClaudeMessage]) -> List[Dict[str, Any]]:
     """Process history messages to match Amazon Q format (alternating user/assistant)."""
