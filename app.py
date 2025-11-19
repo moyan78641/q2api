@@ -22,7 +22,9 @@ import aiosqlite
 # ------------------------------------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "data.sqlite3"
+# Allow configuring data directory via env var (useful for Docker volumes)
+DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR)))
+DB_PATH = DATA_DIR / "data.sqlite3"
 
 load_dotenv(BASE_DIR / ".env")
 
@@ -450,9 +452,51 @@ async def _update_stats(account_id: str, success: bool) -> None:
 # Dependencies
 # ------------------------------------------------------------------------------
 
-async def require_account(authorization: Optional[str] = Header(default=None)) -> Dict[str, Any]:
-    bearer = _extract_bearer(authorization)
+async def require_account(authorization: Optional[str] = Header(default=None), x_api_key: Optional[str] = Header(default=None, alias="x-api-key")) -> Dict[str, Any]:
+    # Support both Authorization header (OpenAI style) and x-api-key header (Claude style)
+    bearer = _extract_bearer(authorization) if authorization else x_api_key
     return await resolve_account_for_key(bearer)
+
+# ------------------------------------------------------------------------------
+# Models endpoint (OpenAI-compatible)
+# ------------------------------------------------------------------------------
+
+@app.get("/v1/models")
+async def list_models(authorization: Optional[str] = Header(default=None), x_api_key: Optional[str] = Header(default=None, alias="x-api-key")):
+    """
+    List available models. Returns OpenAI-compatible model list.
+    Supports both Authorization: Bearer <key> and x-api-key: <key> headers.
+    """
+    # Verify API key if OPENAI_KEYS is configured
+    bearer = _extract_bearer(authorization) if authorization else x_api_key
+    if ALLOWED_API_KEYS:
+        if not bearer or bearer not in ALLOWED_API_KEYS:
+            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+    # Return static list of supported models
+    return {
+        "object": "list",
+        "data": [
+            {
+                "id": "claude-3.5-sonnet",
+                "object": "model",
+                "created": 1677610602,
+                "owned_by": "anthropic",
+            },
+            {
+                "id": "claude-sonnet-4",
+                "object": "model",
+                "created": 1677610602,
+                "owned_by": "anthropic",
+            },
+            {
+                "id": "claude-sonnet-4.5",
+                "object": "model",
+                "created": 1677610602,
+                "owned_by": "anthropic",
+            },
+        ],
+    }
 
 # ------------------------------------------------------------------------------
 # OpenAI-compatible Chat endpoint
